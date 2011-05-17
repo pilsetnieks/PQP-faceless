@@ -1,0 +1,3 @@
+Nuovo's PQP-faceless is a drop-in replacement for Particletree's PHPQuickProfiler for cases where the HTML output of the latter is not desirable - either because it should not be shown to the end user or because the output isn't HTML, or it's just that no one is watching it at all.
+
+www.nuovo.lv
