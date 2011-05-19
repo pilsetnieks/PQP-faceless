@@ -1,3 +1,8 @@
 Nuovo's PQP-faceless is a drop-in replacement for Particletree's PHPQuickProfiler for cases where the HTML output of the latter is not desirable - either because it should not be shown to the end user or because the output isn't HTML, or it's just that no one is watching it at all.
 
+TODO:
+- Profiler data should be written to file dynamically, instead of only collecting at the end;
+- Loop profiling;
+- Saving profiled data to database.
+
 www.nuovo.lv
