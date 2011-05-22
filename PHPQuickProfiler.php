@@ -14,10 +14,15 @@
 
  	class PHPQuickProfiler
 	{
-		const OUTPUT_MODE_FILE = 'File';
-		const OUTPUT_MODE_DISPLAY = 'Display';
+		const OUTPUT_DEST_FILE = 'File';
+		const OUTPUT_DEST_DISPLAY = 'Display';
+		const OUTPUT_DEST_MYSQL = 'MySQL';
 
-		private $OutputMode = 'Display';
+		const OUTPUT_MODE_CONTINUOUS = 'Continuous';
+		const OUTPUT_MODE_AT_END = 'AtEnd';
+
+		private $OutputDest = 'Display';
+		private $OutputMode = 'AtEnd';
 		private $OutputFile = false;
 
 		private $StartTime = 0;
@@ -40,13 +45,17 @@
 			'Error' => array()
 		);
 
+		/**
+		 * @param float Starting time (Unix timestamp, in seconds)
+		 * @param array Options
+		 */
 		public function __construct($StartTime, array $Options = null)
 		{
 			$this -> StartTime = $StartTime ? $StartTime : self::getMicroTime();
 			$this -> StartMemory = memory_get_usage();
 
-			$this -> OutputMode = self::OUTPUT_MODE_DISPLAY;
-			if (isset($Options['Mode']) && $Options['Mode'] == self::OUTPUT_MODE_FILE)
+			$this -> OutputDest = self::OUTPUT_DEST_DISPLAY;
+			if (isset($Options['Dest']) && $Options['Dest'] == self::OUTPUT_DEST_FILE)
 			{
 				if (isset($Options['File']) && is_writable($Options['File']))
 				{
@@ -59,11 +68,21 @@
 
 				if ($this -> OutputFile)
 				{
-					$this -> OutputMode = self::OUTPUT_MODE_FILE;
+					$this -> OutputDest = self::OUTPUT_DEST_FILE;
 				}
 			}
 
-			Console::Init();
+			$this -> OutputMode = self::OUTPUT_MODE_AT_END;
+			if (isset($Options['Mode']) && $Options['Mode'] == self::OUTPUT_MODE_CONTINUOUS)
+			{
+				$this -> OutputMode = self::OUTPUT_MODE_CONTINUOUS;
+			}
+
+			Console::Init(
+				($this -> OutputMode == self::OUTPUT_MODE_CONTINUOUS),
+				$this -> OutputDest,
+				$this -> OutputFile
+			);
 		}
 
 		private function GatherFileData()
@@ -139,121 +158,20 @@
 		 */
 		public function display($DB = null, $MasterDB = null)
 		{
-			$Output = '--- '.date('Y-m-d H:i:s').' ---'.endl.endl;
-
-			// !Memory data
-			$Output .= '--- Memory ---'.endl;
-			$Output .= endl;
-			$Output .= 'Currently allocated: '.self::GetReadableFileSize(memory_get_usage(), 6).endl;
-			$Output .= 'Total peak: '.self::GetReadableFileSize(memory_get_peak_usage(), 6).endl;
-			$Output .= 'Profiled allocated memory: '.self::GetReadableFileSize(memory_get_usage() - $this -> StartMemory, 6).endl;
-			$Output .= 'Peak profiled memory: '.self::GetReadableFileSize(memory_get_peak_usage() - $this -> StartMemory, 6).endl;
-			$Output .= endl;
-
-			// Gather file data
-			$this -> GatherConsoleData();
-			$this -> GatherFileData();
-			$this -> GatherQueryData();
-			$this -> GatherSpeedData();
-
-			// !Log entries
-			$LogEntryCount = count($this -> Data['Log']);
-			$LogEntryCountLen = strlen($LogEntryCount);
-			$Output .= '--- Log entries: ---'.endl;
-			$Output .= endl;
-			$Output .= $LogEntryCount.' entries'.endl;
-
-			if ($LogEntryCount)
+			if ($this -> OutputMode == self::OUTPUT_MODE_AT_END)
 			{
-				$Output .= endl;
-				foreach ($this -> Data['Log'] as $Index => $Entry)
+				$Output = Console::GetOutput();
+
+				if ($this -> OutputDest == self::OUTPUT_DEST_DISPLAY)
 				{
-					$Output .= str_pad($Index + 1, $LogEntryCountLen + 1, ' ').'| ';
-					$Output .= $Entry.endl;
+					echo '<pre>';
+					echo $Output;
+					echo '</pre>';
 				}
-			}
-
-			$Output .= endl.endl;
-
-			// !Errors
-			$ErrorCount = count($this -> Data['Error']);
-			$ErrorCountLen = strlen($ErrorCount);
-			$Output .= '--- Errors: ---'.endl;
-			$Output .= endl;
-			$Output .= $ErrorCount.' errors'.endl;
-
-			if ($ErrorCount)
-			{
-				$Output .= endl;
-				foreach ($this -> Data['Error'] as $Index => $Error)
+				elseif ($this -> OutputDest == self::OUTPUT_DEST_FILE)
 				{
-					$Output .= str_pad($Index + 1, $EntryCountLen + 1, ' ').'| ';
-					$Output .= $Error.endl;
+					file_put_contents($this -> OutputFile, $Output, FILE_APPEND);
 				}
-			}
-
-			$Output .= endl.endl;
-
-			// !Query data output
-			$QueryCount = count($this -> Data['Queries']['List']);
-			$QueryCountLen = strlen($QueryCount);
-			$Output .= '--- Queries: ---'.endl;
-			$Output .= endl;
-			$Output .= 'Total of '.$QueryCount.' queries, '.self::GetReadableTime($this -> Data['Queries']['TotalTime']).endl;
-			$Output .= endl;
-
-			foreach ($this -> Data['Queries']['List'] as $Index => $Query)
-			{
-				$Output .= str_pad($Index + 1, $QueryCountLen + 1, ' ').'| ';
-				$Output .= str_pad($Query['Time'], 10, ' ').'| ';
-				$Output .= self::GetWrappedText($Query['SQL'], 100, 0, $QueryCountLen + 17).endl;
-				$Output .= endl;
-			}
-
-			$Output .= endl.endl;
-
-			// !File data output
-			$FileCount = count($this -> Data['Files']['List']);
-			$FileCountLen = strlen($FileCount);
-
-			$Output .= '--- Files: ---'.endl;
-			$Output .= endl;
-			$Output .= 'Total of '.$FileCount.' files, '.self::GetReadableFileSize($this -> Data['Files']['TotalSize']).endl;
-			$Output .= endl;
-
-			foreach ($this -> Data['Files']['List'] as $Index => $File)
-			{
-				$Output .= str_pad($Index + 1, $FileCountLen + 1, ' ').'| ';
-				$Output .= str_pad($File['Size'], 10, ' ').'| ';
-				$Output .= $File['Name'].endl;
-			}
-
-			$Output .= endl.endl;
-
-			// !Speed count
-			$SpeedCountLen = strlen(count($this -> Data['Speed']['List']));
-			$Output .= '--- Load time: ---'.endl;
-			$Output .= endl;
-			$Output .= 'Total time '.self::GetReadableTime($this -> Data['Speed']['TotalTime']).endl;
-			$Output .= endl;
-			foreach ($this -> Data['Speed']['List'] as $Index => $Speed)
-			{
-				$Output .= str_pad($Index + 1, $SpeedCountLen + 1, ' ').'| ';
-				$Output .= str_pad($Speed['Time'], 10, ' ').'| ';
-				$Output .= $Speed['Name'].endl;
-			}
-
-			$Output .= endl.endl;
-
-			if ($this -> OutputMode == self::OUTPUT_MODE_DISPLAY)
-			{
-				echo '<pre>';
-				echo $Output;
-				echo '</pre>';
-			}
-			elseif ($this -> OutputMode == self::OUTPUT_MODE_FILE)
-			{
-				file_put_contents($this -> OutputFile, $Output, FILE_APPEND);
 			}
 		}
 
@@ -262,7 +180,7 @@
 			return microtime(true);
 		}
 
-		private static function GetReadableFileSize($Size, $Precision = 3)
+		protected static function GetReadableFileSize($Size, $Precision = 3)
 		{
 			$Units = array('B', 'kB', 'MB', 'GB', 'TB');
 
@@ -288,7 +206,7 @@
 		/**
 		 * @Param float Time in seconds
 		 */
-		private static function GetReadableTime($Time)
+		protected static function GetReadableTime($Time)
 		{
 			if ($Time <= 0)
 			{
@@ -307,7 +225,7 @@
 			return round($Time, 2).' '.$Units[$UnitCtr];
 		}
 
-		private static function GetWrappedText($Text, $LineWidth, $FirstLineIndent = 0, $OtherLineIndent = 0)
+		protected static function GetWrappedText($Text, $LineWidth, $FirstLineIndent = 0, $OtherLineIndent = 0)
 		{
 			$Text = preg_replace('{(\s)+}isS', ' ', $Text);
 
